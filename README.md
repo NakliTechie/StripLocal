@@ -73,6 +73,20 @@ JPEG · PNG · WebP — anything the browser's native image decoder can handle.
 
 ---
 
+## Launching a new tool in this series
+
+Checklist to run through before and after the first push:
+
+1. **Set git author** — `git config user.name "Chirag Patnaik"` before committing
+2. **README live link** — add `**[Try it live →](https://naklitechie.github.io/<RepoName>/)**` right after the h1
+3. **Footer attribution** — `index.html` footer should read "NakliTechie" and link to `https://github.com/NakliTechie/<RepoName>`
+4. **Enable GitHub Pages** — after pushing, run:
+   ```bash
+   gh api repos/NakliTechie/<RepoName>/pages -X POST --field 'source[branch]=main' --field 'source[path]=/'
+   ```
+
+---
+
 ## License
 
 MIT
