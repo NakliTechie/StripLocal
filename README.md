@@ -1,5 +1,7 @@
 # StripLocal — EXIF Metadata Remover
 
+**[Try it live →](https://naklitechie.github.io/StripLocal/)**
+
 **Every photo you take is carrying a passenger.**
 
 GPS coordinates. The exact timestamp. Your phone's model and serial number. Camera settings. Software you used to edit it. Sometimes a tiny embedded copy of the photo itself.
