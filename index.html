@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StripLocal — EXIF Metadata Remover</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0f4f8;
+      color: #2d3748;
+      min-height: 100vh;
+      padding: 24px 16px 60px;
+    }
+
+    .app { max-width: 720px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .header h1 { font-size: 1.5rem; font-weight: 700; color: #1a202c; }
+    .header p  { font-size: 0.8rem; color: #718096; margin-top: 2px; }
+
+    .badge {
+      font-size: 0.75rem; font-weight: 500;
+      padding: 4px 12px; border-radius: 20px; border: 1px solid;
+      display: flex; align-items: center; gap: 6px;
+      transition: background 0.4s, border-color 0.4s, color 0.4s;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .badge.ready   { background: #e6fffa; border-color: #81e6d9; color: #234e52; }
+    .badge.working { background: #fffbeb; border-color: #f6e05e; color: #744210; }
+
+    .spinner {
+      width: 10px; height: 10px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Card ────────────────────────────────────────────────────────────── */
+    .card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+
+    /* ── Drop zone ───────────────────────────────────────────────────────── */
+    .drop-zone {
+      margin: 16px;
+      padding: 52px 24px;
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+      border: 2px dashed #e2e8f0; border-radius: 12px;
+      cursor: pointer; user-select: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .drop-zone:hover,
+    .drop-zone.drag-over { border-color: #667eea; background: #f7f8ff; }
+
+    .drop-zone.compact {
+      padding: 14px 20px;
+      flex-direction: row; justify-content: center; gap: 8px;
+    }
+    .drop-zone.compact .dz-title,
+    .drop-zone.compact .dz-sub,
+    .drop-zone.compact .dz-btn  { display: none; }
+    .drop-zone.compact .dz-icon { font-size: 1.3rem; }
+    .drop-zone.compact .dz-add  { display: block; }
+
+    .dz-icon  { font-size: 2.6rem; line-height: 1; }
+    .dz-title { font-size: 1rem; font-weight: 600; color: #1a202c; }
+    .dz-sub   { font-size: 0.8rem; color: #718096; text-align: center; line-height: 1.6; }
+    .dz-add   { display: none; font-size: 0.82rem; color: #718096; }
+
+    .dz-btn {
+      margin-top: 4px;
+      padding: 7px 18px;
+      background: none; border: 1px solid #e2e8f0; border-radius: 8px;
+      font-size: 0.85rem; font-weight: 500; color: #4a5568; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .dz-btn:hover { background: #f0f4f8; border-color: #cbd5e0; }
+
+    /* ── Info box (empty state) ──────────────────────────────────────────── */
+    .info-box {
+      margin: 0 16px 16px;
+      padding: 14px 16px;
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+    }
+    .info-box h3 { font-size: 0.78rem; font-weight: 600; color: #4a5568; margin-bottom: 8px; }
+    .info-tags   { display: flex; flex-wrap: wrap; gap: 5px; }
+    .info-tag {
+      font-size: 0.72rem; padding: 2px 8px;
+      background: white; border: 1px solid #e2e8f0; border-radius: 10px; color: #4a5568;
+    }
+
+    /* ── File list ───────────────────────────────────────────────────────── */
+    .file-list { padding: 0 16px 8px; }
+    .file-list-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 4px;
+    }
+    .file-count { font-size: 0.78rem; color: #718096; }
+
+    .btn-icon {
+      font-size: 0.78rem; color: #718096;
+      background: none; border: none; cursor: pointer;
+      padding: 4px 8px; border-radius: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn-icon:hover { background: #e2e8f0; color: #2d3748; }
+
+    .file-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0; border-bottom: 1px solid #f0f4f8;
+    }
+    .file-item:last-child { border-bottom: none; }
+
+    .file-thumb {
+      width: 44px; height: 44px;
+      object-fit: cover; border-radius: 6px;
+      background: #f0f4f8; flex-shrink: 0;
+    }
+    .file-info   { flex: 1; min-width: 0; }
+    .file-name   { font-size: 0.85rem; font-weight: 500; color: #2d3748; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-meta   { font-size: 0.73rem; color: #718096; margin-top: 1px; }
+
+    .pill {
+      font-size: 0.72rem; font-weight: 500;
+      padding: 2px 8px; border-radius: 10px; white-space: nowrap; flex-shrink: 0;
+    }
+    .pill.pending    { background: #f0f4f8; color: #718096; }
+    .pill.processing { background: #fffbeb; color: #744210; }
+    .pill.done       { background: #e6fffa; color: #234e52; }
+    .pill.error      { background: #fff5f5; color: #c53030; }
+
+    .btn-save {
+      padding: 5px 12px;
+      background: none; border: 1px solid #667eea; border-radius: 8px;
+      font-size: 0.78rem; font-weight: 500; color: #667eea;
+      cursor: pointer; flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .btn-save:hover:not(:disabled) { background: #ebf4ff; }
+    .btn-save:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ── Action bar ──────────────────────────────────────────────────────── */
+    .action-bar {
+      display: flex; justify-content: flex-end; gap: 8px;
+      padding: 12px 16px;
+      background: #f8fafc; border-top: 1px solid #e2e8f0;
+    }
+    .btn-primary {
+      padding: 9px 22px;
+      background: #667eea; color: white;
+      border: none; border-radius: 8px;
+      font-size: 0.9rem; font-weight: 600; cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn-primary:hover:not(:disabled) { background: #5a67d8; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Footer link ─────────────────────────────────────────────────────── */
+    .footer-link {
+      position: fixed; bottom: 14px; right: 18px;
+      font-size: 0.7rem; color: #cbd5e0; opacity: 0.7;
+      text-decoration: none; letter-spacing: 0.01em;
+      transition: opacity 0.2s;
+    }
+    .footer-link:hover { opacity: 1; }
+
+    #filePicker { display: none; }
+
+    @media (max-width: 600px) {
+      .pill       { display: none; }
+      .header p   { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <div class="header">
+    <div>
+      <h1>StripLocal</h1>
+      <p>Remove photo metadata — nothing leaves your browser</p>
+    </div>
+    <div class="badge ready" id="badge">
+      <span>⚡</span><span>Ready</span>
+    </div>
+  </div>
+
+  <div class="card">
+
+    <!-- Drop zone -->
+    <div class="drop-zone" id="dropZone">
+      <span class="dz-icon">🖼️</span>
+      <span class="dz-title">Drop photos here to strip metadata</span>
+      <span class="dz-sub">GPS location · timestamp · device model · camera settings<br>Everything removed in-browser. No upload. No server. No tracking.</span>
+      <span class="dz-add">+ Drop or click to add more</span>
+      <button class="dz-btn" id="browseBtn">Choose files</button>
+    </div>
+
+    <!-- Info box (shown in empty state only) -->
+    <div class="info-box" id="infoBox">
+      <h3>What gets stripped</h3>
+      <div class="info-tags">
+        <span class="info-tag">📍 GPS coordinates</span>
+        <span class="info-tag">📅 Date &amp; time taken</span>
+        <span class="info-tag">📱 Device model &amp; serial</span>
+        <span class="info-tag">📷 ISO, aperture, shutter speed</span>
+        <span class="info-tag">👤 Author / copyright / artist</span>
+        <span class="info-tag">🔍 Software &amp; editing history</span>
+        <span class="info-tag">🏷️ IPTC keywords &amp; captions</span>
+        <span class="info-tag">📝 XMP / Adobe metadata</span>
+        <span class="info-tag">🌐 Embedded thumbnail preview</span>
+      </div>
+    </div>
+
+    <!-- File list -->
+    <div class="file-list" id="fileListSec" style="display:none">
+      <div class="file-list-header">
+        <span class="file-count" id="fileCount"></span>
+        <button class="btn-icon" id="clearBtn">Clear all</button>
+      </div>
+      <div id="fileItems"></div>
+    </div>
+
+    <!-- Action bar -->
+    <div class="action-bar" id="actionBar" style="display:none">
+      <button class="btn-primary" id="downloadAllBtn">Strip &amp; Download All</button>
+    </div>
+
+  </div>
+</div>
+
+<input type="file" id="filePicker" accept="image/*" multiple>
+<a href="https://github.com/NakliTechie/browser-exif" class="footer-link" target="_blank" rel="noopener">NakliTechie</a>
+
+<script>
+'use strict';
+
+// ── State ──────────────────────────────────────────────────────────────────
+const queue = [];  // { id, file, thumbUrl, status, blob }
+let uid  = 0;
+let busy = false;
+
+// ── DOM ────────────────────────────────────────────────────────────────────
+const dropZone       = document.getElementById('dropZone');
+const filePicker     = document.getElementById('filePicker');
+const browseBtn      = document.getElementById('browseBtn');
+const infoBox        = document.getElementById('infoBox');
+const fileListSec    = document.getElementById('fileListSec');
+const fileItemsEl    = document.getElementById('fileItems');
+const fileCountEl    = document.getElementById('fileCount');
+const actionBarEl    = document.getElementById('actionBar');
+const downloadAllBtn = document.getElementById('downloadAllBtn');
+const clearBtn       = document.getElementById('clearBtn');
+const badge          = document.getElementById('badge');
+
+// ── EXIF orientation (JPEG only) ───────────────────────────────────────────
+// We only need the orientation tag (0x0112) so that rotated photos look right
+// after we strip EXIF by re-encoding through canvas.
+function readJpegOrientation(buf) {
+  const v = new DataView(buf);
+  if (v.byteLength < 4 || v.getUint16(0) !== 0xFFD8) return 1;
+  let off = 2;
+  while (off + 4 <= v.byteLength) {
+    const marker = v.getUint16(off); off += 2;
+    if (marker === 0xFFE1) {
+      const segEnd = off + v.getUint16(off); off += 2;
+      // Check for "Exif\0\0" header
+      if (off + 6 <= v.byteLength &&
+          v.getUint32(off) === 0x45786966 && v.getUint16(off + 4) === 0x0000) {
+        const tiff = off + 6;
+        const le   = v.getUint16(tiff) === 0x4949;
+        const ifd  = tiff + v.getUint32(tiff + 4, le);
+        if (ifd + 2 > v.byteLength) break;
+        const count = v.getUint16(ifd, le);
+        for (let i = 0; i < count; i++) {
+          const e = ifd + 2 + i * 12;
+          if (e + 12 > v.byteLength) break;
+          if (v.getUint16(e, le) === 0x0112) return v.getUint16(e + 8, le);
+        }
+      }
+      off = segEnd;
+    } else if ((marker & 0xFF00) !== 0xFF00) {
+      break;
+    } else if (off + 2 <= v.byteLength) {
+      off += v.getUint16(off);
+    } else {
+      break;
+    }
+  }
+  return 1;
+}
+
+// EXIF orientation value → [rotateDeg, flipX]
+// Handles all 8 EXIF orientation cases (including mirrored variants).
+const ORIENT = { 1:[0,0], 2:[0,1], 3:[180,0], 4:[180,1], 5:[90,1], 6:[90,0], 7:[270,1], 8:[270,0] };
+
+// ── Core: strip EXIF via canvas round-trip ─────────────────────────────────
+// Drawing an image to canvas discards all metadata — only pixel data survives.
+// We bake the EXIF orientation transform before drawing so the output is upright.
+function stripExif(file) {
+  return file.arrayBuffer().then(buf => {
+    const orientation = file.type === 'image/jpeg' ? readJpegOrientation(buf) : 1;
+    const [deg, flipX] = ORIENT[orientation] ?? ORIENT[1];
+    const objUrl = URL.createObjectURL(file);
+
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onerror = () => { URL.revokeObjectURL(objUrl); reject(new Error('Image load failed')); };
+      img.onload  = () => {
+        URL.revokeObjectURL(objUrl);
+        const W = img.naturalWidth, H = img.naturalHeight;
+        const rotated = deg === 90 || deg === 270;
+        const canvas  = document.createElement('canvas');
+        canvas.width  = rotated ? H : W;
+        canvas.height = rotated ? W : H;
+        const ctx = canvas.getContext('2d');
+        ctx.save();
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        if (flipX) ctx.scale(-1, 1);
+        ctx.rotate(deg * Math.PI / 180);
+        ctx.drawImage(img, -W / 2, -H / 2);
+        ctx.restore();
+        const mime    = file.type === 'image/png'  ? 'image/png'
+                      : file.type === 'image/webp' ? 'image/webp'
+                      : 'image/jpeg';
+        const quality = mime === 'image/png' ? undefined : 0.95;
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), mime, quality);
+      };
+      img.src = objUrl;
+    });
+  });
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+function fmt(bytes) {
+  if (bytes < 1024)    return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function cleanName(name) {
+  const d = name.lastIndexOf('.');
+  return d < 0 ? name + '-clean' : name.slice(0, d) + '-clean' + name.slice(d);
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function triggerDownload(blob, filename) {
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: filename,
+  });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+// ── Badge ──────────────────────────────────────────────────────────────────
+function setBadge(state) {
+  badge.className = 'badge ' + state;
+  badge.innerHTML = state === 'working'
+    ? '<span class="spinner"></span><span>Processing…</span>'
+    : '<span>⚡</span><span>Ready</span>';
+}
+
+// ── Layout sync ────────────────────────────────────────────────────────────
+function updateLayout() {
+  const has = queue.length > 0;
+  infoBox.style.display      = has ? 'none' : '';
+  fileListSec.style.display  = has ? ''     : 'none';
+  actionBarEl.style.display  = has ? ''     : 'none';
+  dropZone.classList.toggle('compact', has);
+  fileCountEl.textContent = queue.length + ' image' + (queue.length !== 1 ? 's' : '');
+}
+
+// ── Render one file entry (create or update) ───────────────────────────────
+function renderEntry(entry) {
+  let el = document.getElementById('fi-' + entry.id);
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'file-item';
+    el.id = 'fi-' + entry.id;
+    el.innerHTML = `
+      <img class="file-thumb" src="${entry.thumbUrl}" alt="">
+      <div class="file-info">
+        <div class="file-name">${esc(entry.file.name)}</div>
+        <div class="file-meta">${fmt(entry.file.size)}</div>
+      </div>
+      <span class="pill pending" data-pill></span>
+      <button class="btn-save" data-save disabled>Save</button>`;
+    el.querySelector('[data-save]').addEventListener('click', () => {
+      if (entry.blob) triggerDownload(entry.blob, cleanName(entry.file.name));
+    });
+    fileItemsEl.appendChild(el);
+  }
+  const pill = el.querySelector('[data-pill]');
+  const btn  = el.querySelector('[data-save]');
+  pill.className   = 'pill ' + entry.status;
+  pill.textContent = { pending:'Ready', processing:'Stripping…', done:'Clean ✓', error:'Error' }[entry.status] ?? entry.status;
+  btn.disabled = entry.status !== 'done';
+}
+
+// ── Add files from a FileList ──────────────────────────────────────────────
+function addFiles(list) {
+  let added = 0;
+  for (const file of list) {
+    if (!file.type.startsWith('image/')) continue;
+    const entry = { id: uid++, file, thumbUrl: URL.createObjectURL(file), status: 'pending', blob: null };
+    queue.push(entry);
+    renderEntry(entry);
+    added++;
+  }
+  if (added) updateLayout();
+}
+
+// ── Process all queued images, download each as it finishes ───────────────
+async function processAll() {
+  if (busy) return;
+  busy = true;
+  downloadAllBtn.disabled = true;
+  setBadge('working');
+
+  for (const entry of [...queue]) {
+    if (entry.status === 'done' && entry.blob) {
+      triggerDownload(entry.blob, cleanName(entry.file.name));
+      continue;
+    }
+    entry.status = 'processing';
+    renderEntry(entry);
+    try {
+      entry.blob   = await stripExif(entry.file);
+      entry.status = 'done';
+    } catch {
+      entry.status = 'error';
+    }
+    renderEntry(entry);
+    if (entry.blob) triggerDownload(entry.blob, cleanName(entry.file.name));
+  }
+
+  busy = false;
+  downloadAllBtn.disabled = false;
+  setBadge('ready');
+}
+
+// ── Events ─────────────────────────────────────────────────────────────────
+browseBtn.addEventListener('click', e => { e.stopPropagation(); filePicker.click(); });
+dropZone.addEventListener('click', () => filePicker.click());
+filePicker.addEventListener('change', e => { addFiles(e.target.files); filePicker.value = ''; });
+
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', e => { if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove('drag-over'); });
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  addFiles(e.dataTransfer.files);
+});
+
+// Allow dropping anywhere on the page
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  addFiles(e.dataTransfer.files);
+});
+
+downloadAllBtn.addEventListener('click', processAll);
+
+clearBtn.addEventListener('click', () => {
+  queue.forEach(e => URL.revokeObjectURL(e.thumbUrl));
+  queue.length = 0;
+  fileItemsEl.innerHTML = '';
+  updateLayout();
+});
+</script>
+</body>
+</html>
