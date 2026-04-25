@@ -57,6 +57,14 @@ No build step. No npm. No install. One file.
 
 ---
 
+## Palette
+
+Coloured with **`chernobyl-01 · АТОМГРАД ATOMGRAD`** — pre-1986 Pripyat science campus, sterile Soviet utopian planning. Sky-blue command rules, signal-yellow brand mark, lime-green OK confirmations — the visual language of decontamination.
+
+Palette pulled from [**Rangrez**](https://github.com/NakliTechie/rangrez), the global colour-palette library that backs all NakliTechie projects.
+
+---
+
 ## Part of the NakliTechie series
 
 | Tool | What it does |
